@@ -120,7 +120,7 @@ if __name__ == "__main__":
     device = args["device"]
 
     # =====> 1. Load or create lens
-    if args["brute_force"]:
+    if args["brute_force"]:  # 暴力求解？
         create_lens(
             rff=float(args["rff"]),
             flange=float(args["flange"]),
