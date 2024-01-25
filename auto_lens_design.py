@@ -37,7 +37,7 @@ def config():
     num_gpus = torch.cuda.device_count()
     args["num_gpus"] = num_gpus
     device = torch.device(f"cuda" if torch.cuda.is_available() else "cpu")
-    device = torch.device("cpu")
+    # device = torch.device("cpu")
     args["device"] = device
     logging.info(f"Using {num_gpus} GPUs")
 
@@ -58,7 +58,7 @@ def change_lens(lens, diag, fnum):
     return lens
 
 
-def curriculum_learning(lens, args):
+def curriculum_learning(lens: deeplens.Lensgroup, args):
     """Curriculum learning for lens design."""
     lrs = [float(lr) for lr in args["lrs"]]
 
@@ -140,7 +140,7 @@ if __name__ == "__main__":
             lens.surfaces[i].init_d()
     else:
         lens = deeplens.Lensgroup(filename=args["filename"])
-        lens.correct_shape()
+        # lens.correct_shape()
 
     lens.set_target_fov_fnum(hfov=args["HFOV"], fnum=args["FNUM"], imgh=args["DIAG"])
     logging.info(
@@ -154,7 +154,12 @@ if __name__ == "__main__":
     # =====> 3. Analyze final result
     lens.prune(outer=0.2)
     lens.post_computation()
-
     logging.info(f"Actual: FOV {lens.hfov}, IMGH {lens.r_last}, F/{lens.fnum}.")
     lens.write_lensfile(f"{result_dir}/final_lens.txt", write_zmx=True)
     lens.analysis(save_name=f"{result_dir}/final_lens", zmx_format=True)
+
+    lens.draw_mtf()
+    lens.draw_psf()
+    lens.draw_psf_radial()
+    lens.draw_spot_diagram()
+    lens.draw_spot_radial()

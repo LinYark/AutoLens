@@ -1,6 +1,7 @@
 # => experiment options
 DEBUG: True
-brute_force: True
+brute_force: False
+filename: "./results/resume.txt"
 EXP_NAME: '6P, 80deg, F/2.0, 7.66mm sensor, lens design'
 seed: 1
 

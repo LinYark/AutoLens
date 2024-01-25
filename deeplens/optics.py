@@ -1587,8 +1587,7 @@ class Lensgroup:
                     )
 
                     # Method 2: manually solve
-                    # https://blog.csdn.net/xdedzl/article/details/86009147#:~:text=3.%E4%B8%89%E7%BB%B4%E7%A9%BA%E9%97%B4,%E7%AD%89%E5%BC%8F%E6%88%90%E7%AB%8B
-                    # https://blog.csdn.net/m0_46530392/article/details/115117818
+                    # https://en.wikipedia.org/wiki/Line%E2%80%93line_intersection
                     Adet = -d1x * d2z + d2x * d1z
                     B1 = -d1z * o1x + d1x * o1z
                     B2 = -d2z * o2x + d2x * o2z
@@ -2147,7 +2146,7 @@ class Lensgroup:
 
     @torch.no_grad()
     def draw_psf_radial(
-        self, M=3, depth=DEPTH, ks=51, log_scale=False, save_name="./psf_radial.png"
+        self, M=10, depth=DEPTH, ks=51, log_scale=False, save_name="./psf_radial.png"
     ):
         """Draw radial PSF (45 deg). Will draw M PSFs, each of size ks x ks."""
         x = torch.linspace(0, 1, M)
@@ -2269,16 +2268,16 @@ class Lensgroup:
         # ==> Save figure
         if save_name is None:
             plt.savefig(
-                f"./spot{-depth}mm_radial.svg",
+                f"./spot{-depth}mm_radial.png",
                 bbox_inches="tight",
-                format="svg",
+                format="png",
                 dpi=1200,
             )
         else:
             plt.savefig(
-                f"{save_name}_spot{-depth}mm_radial.svg",
+                f"{save_name}_spot{-depth}mm_radial.png",
                 bbox_inches="tight",
-                format="svg",
+                format="png",
                 dpi=1200,
             )
 

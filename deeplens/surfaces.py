@@ -621,6 +621,7 @@ class Aspheric(Surface):
         """Compute nabla f(x, y, z).
         Normal should be (deltax, deltay, deltaz), deltax = df/dx
         https://mathworld.wolfram.com/NormalVector.html
+        只看公式一就可以了
 
         Normal vector points to left by default.
         """
@@ -841,6 +842,7 @@ class Aspheric(Surface):
 
     def _g(self, r2):
         """Compute z(r) according to aspherical function."""
+        # https://en.wikipedia.org/wiki/Aspheric_lens
         total_surface = (
             r2 * self.c / (1 + torch.sqrt(1 - (1 + self.k) * r2 * self.c**2))
         )
