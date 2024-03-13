@@ -1,5 +1,6 @@
 """ Geometry optics. Lensgroup implementation.
 """
+
 import torch
 import glob
 import random
@@ -2397,15 +2398,13 @@ class Lensgroup:
                     -1
                 )  # normalized to center (0, 0)
 
-            rms.append(
-                torch.sum(o2_norm**2 * ray.ra.unsqueeze(-1)) / torch.sum(ray.ra)
-            )
+            rms.append(torch.sum(o2_norm**2 * ray.ra.unsqueeze(-1)) / torch.sum(ray.ra))
             rms_on_axis.append(
                 torch.sum(
                     o2_norm[:, H // 2 + 1, H // 2 + 1, :] ** 2
                     * ray.ra[:, H // 2 + 1, H // 2 + 1].unsqueeze(-1)
                 )
-                / torch.sum(ray.ra[:, H // 2, H // 2])
+                / torch.sum(ray.ra[:, H // 2, H // 2])  # 是不是错误的少了个+1 -linyark
             )
             rms_off_axis.append(
                 torch.sum(o2_norm[:, 0, 0, :] ** 2 * ray.ra[:, 0, 0].unsqueeze(-1))
@@ -2522,10 +2521,13 @@ class Lensgroup:
     def loss_reg(self, w1=0.2, w2=1, w3=1):
         """An empirical regularization loss for lens design."""
         loss_reg = (
-            w1 * self.loss_infocus()
-            + w2 * self.loss_ray_angle()
-            + w3 * (self.loss_self_intersec() + self.loss_last_surf())
-            + self.loss_surface()
+            w1 * self.loss_infocus()  # 平行光的离焦
+            + w2 * self.loss_ray_angle()  # 惩罚失效的大入射角的漏光线
+            + w3
+            * (
+                self.loss_self_intersec() + self.loss_last_surf()
+            )  # 惩罚交点，惩罚最后到sensor的距离
+            + self.loss_surface()  # 惩罚表面的区别，通过边缘高度惩罚
         )
         return loss_reg
 
@@ -2822,7 +2824,7 @@ class Lensgroup:
                 l_rms = torch.sum((xy_norm**2).sum(-1) * weight_mask) / (
                     torch.sum(ray.ra) + EPSILON
                 )
-                loss_rms.append(l_rms)
+                loss_rms.append(l_rms)  # loss_rmns
 
             w_reg = 0.02
             L_reg = self.loss_reg()
