@@ -24,7 +24,7 @@ from transformers import get_cosine_schedule_with_warmup
 
 from .surfaces import *
 from .utils import *
-from .basics import GEO_SPP, EPSILON, WAVE_RGB
+from .basics import GEO_SPP, EPSILON, WAVE_RGB, GEAR_DIS, GEAR_SUR
 
 class Lensgroup():
     """
@@ -594,7 +594,7 @@ class Lensgroup():
     # Ray Tracing functions
     # ====================================================================================
 
-    def trace(self, ray, stop_ind=None, lens_range=None, ignore_aper=False, record=False):
+    def trace(self, ray, stop_ind=None, lens_range=None, ignore_aper=False, record=False, gear_idx=0):
         """ Ray tracing function. Ray in and ray out.
 
             Forward or backward ray tracing is automatically determined by ray directions.
@@ -620,6 +620,9 @@ class Lensgroup():
         
         if ignore_aper:
             lens_range = self.find_diff_surf()
+
+        if GEAR_SUR is not None:
+            self.surfaces[GEAR_SUR + 1].switch_gear(gear_idx)
 
         # Determine forward or backward
         with torch.no_grad():
@@ -1767,9 +1770,9 @@ class Lensgroup():
                     z = np.append(z, p[i,2])
 
             if plot_invalid:
-                ax.plot(z, x, color, linewidth=1.0)
+                ax.plot(z, x, color, linewidth=0.5)
             elif ra[i]>0:
-                ax.plot(z, x, color, linewidth=1.0)
+                ax.plot(z, x, color, linewidth=0.5)
             
         if show: 
             plt.show()
@@ -2099,7 +2102,7 @@ class Lensgroup():
                 o2_norm = (o2 - o2_center) * ray.ra.unsqueeze(-1)   # normalized to center (0, 0)
 
             rms.append(torch.sum(o2_norm**2 * ray.ra.unsqueeze(-1)) / torch.sum(ray.ra))
-            rms_on_axis.append(torch.sum(o2_norm[:, H//2+1, H//2+1, :]**2 * ray.ra[:, H//2+1, H//2+1].unsqueeze(-1)) / torch.sum(ray.ra[:, H//2, H//2]))
+            rms_on_axis.append(torch.sum(o2_norm[:, H//2+1, H//2+1, :]**2 * ray.ra[:, H//2+1, H//2+1].unsqueeze(-1)) / torch.sum(ray.ra[:, H//2, H//2])) #+1 vs +0?
             rms_off_axis.append(torch.sum(o2_norm[:, 0, 0, :]**2 * ray.ra[:, 0, 0].unsqueeze(-1)) / torch.sum(ray.ra[:, 0, 0]))
 
         rms_radius = (rms[0] / 3 + rms[1] / 3 + rms[2] / 3).sqrt()
@@ -2114,14 +2117,14 @@ class Lensgroup():
             Can also revise this function to plot PSF.
         """
         # H, W = self.sensor_res
-        H = 31
-
+        H = 11
+        spp = 32
         # ==> PSF and RMS by patch
         scale = - depth * np.tan(self.hfov) / self.r_last
 
         rms = 0
         for wavelength in WAVE_RGB:
-            ray = self.sample_point_source(M=H, spp=GEO_SPP, depth=depth, R=self.sensor_size[0]/2*scale, pupil=True, wavelength=wavelength)
+            ray = self.sample_point_source(M=H, spp=spp, depth=depth, R=self.sensor_size[0]/2*scale, pupil=True, wavelength=wavelength)
             ray, _, _ = self.trace(ray, ignore_aper=False)
             o2 = ray.project_to(self.d_sensor)
             o2_center = (o2*ray.ra.unsqueeze(-1)).sum(0)/ray.ra.sum(0).add(0.0001).unsqueeze(-1)    
@@ -2184,7 +2187,7 @@ class Lensgroup():
         M = 11
         spp = 32
         scale = self.calc_scale_pinhole(depth)
-        ray = self.sample_point_source(M=M, spp=spp, depth=DEPTH, R=scale*self.sensor_size[0]/2, pupil=True, shrink=False)
+        ray = self.sample_point_source(M=M, spp=spp, depth=depth, R=scale*self.sensor_size[0]/2, pupil=True, shrink=False)
 
         # Ray tracing
         ray, _, _ = self.trace(ray, ignore_aper=False)
@@ -2196,10 +2199,10 @@ class Lensgroup():
         return - loss
 
 
-    def loss_reg(self, w1=0.2, w2=1, w3=1):
+    def loss_reg(self, depth=DEPTH, w1=0.2, w2=1, w3=1):
         """ An empirical regularization loss for lens design.
         """
-        loss_reg = w1 * self.loss_infocus() + w2 * self.loss_ray_angle() + w3 * (self.loss_self_intersec() + self.loss_last_surf()) + self.loss_surface()
+        loss_reg = w1 * self.loss_infocus() + self.loss_rms(depth) + w2 * self.loss_ray_angle(depth) + w3 * (self.loss_self_intersec() + self.loss_last_surf()) + self.loss_surface() #
         return loss_reg
     
 
@@ -2271,6 +2274,7 @@ class Lensgroup():
         # Find surface indices with specific parameters
         c_ls = []
         d_ls = []
+        gear_ls = []
         k_ls = []
         ai2_ls = []
         ai4_ls = []
@@ -2284,6 +2288,10 @@ class Lensgroup():
         for i, s in enumerate(self.surfaces):
             if s.c != 0:
                 c_ls.append(i)
+                if type(s) == AsphericMultiDis:
+                    gear_ls.append(i)
+                else:
+                    d_ls.append(i)
                 d_ls.append(i)
             if s.k != 0:
                 k_ls.append(i)
@@ -2306,6 +2314,8 @@ class Lensgroup():
             params.append({'params': [self.surfaces[surf].c for surf in c_ls], 'lr': lrs[0]})
         if d_ls and lrs[1] > 0:
             params.append({'params': [self.surfaces[surf].d for surf in c_ls], 'lr': lrs[1]})
+            params.append({'params': [self.surfaces[surf].d_src for surf in gear_ls], 'lr': lrs[1]*3,})
+            params.append({'params': [self.surfaces[surf].gear_table for surf in gear_ls], 'lr': lrs[1]*3,})
         if k_ls and lrs[2] > 0:
             params.append({'params': [self.surfaces[surf].k for surf in k_ls], 'lr': lrs[2]})
         if lrs[3] > 0:
@@ -2377,54 +2387,68 @@ class Lensgroup():
             if i % sample_rays_per_iter == 0:
                 # => Use center spot of green rays
                 with torch.no_grad():
-                    mag = 1 / self.calc_scale_pinhole(depth)
-                    ray = self.sample_point_source(M=M, R=self.sensor_size[0]/2/mag, depth=depth, spp=spp*4, pupil=True, wavelength=WAVE_RGB[1], importance_sampling=importance_sampling)
-                    xy_center_ref = - ray.o[0, :, :, :2] * mag
+                    center_p = []
+                    for depth in GEAR_DIS:
+                        mag = 1 / self.calc_scale_pinhole(depth)
+                        ray = self.sample_point_source(M=M, R=self.sensor_size[0]/2/mag, depth=depth, spp=spp*4, pupil=True, wavelength=WAVE_RGB[1], importance_sampling=importance_sampling)
+                        xy_center_ref = - ray.o[0, :, :, :2] * mag
 
-                    ray, _, _ = self.trace(ray)
-                    ray.propagate_to(self.d_sensor)
-                    xy_center = (ray.o[...,:2]*ray.ra.unsqueeze(-1)).sum(0) / ray.ra.sum(0).add(EPSILON).unsqueeze(-1)
-                    
-                    # center_p shape [M, M, 2]
-                    if centroid:
-                        center_p = xy_center
-                    else:
-                        center_p = xy_center_ref
+                        ray, _, _ = self.trace(ray)
+                        ray.propagate_to(self.d_sensor)
+                        xy_center = (ray.o[...,:2]*ray.ra.unsqueeze(-1)).sum(0) / ray.ra.sum(0).add(EPSILON).unsqueeze(-1)
+                        
+                        # center_p shape [M, M, 2]
+                        if centroid:
+                            center_p_g = xy_center
+                        else:
+                            center_p_g = xy_center_ref
+                        center_p.append(center_p_g)
             
                 # => Sample new rays for training
                 rays_backup = []
-                for wv in WAVE_RGB:
-                    ray = self.sample_point_source(M=M, R=self.sensor_size[0]/2/mag, depth=depth, spp=spp, pupil=True, wavelength=wv, importance_sampling=importance_sampling)
-                    rays_backup.append(ray)
-                   
+                for depth in GEAR_DIS:
+                    rays_wv_backup = []
+                    for wv in WAVE_RGB:
+                        mag = 1 / self.calc_scale_pinhole(depth)
+                        ray = self.sample_point_source(M=M, R=self.sensor_size[0]/2/mag, depth=depth, spp=spp, pupil=True, wavelength=wv, importance_sampling=importance_sampling)
+                        rays_wv_backup.append(ray)
+                    rays_backup.append(rays_wv_backup)
 
+                   
             # =========================================
             # Optimize lens by minimizing rms errors
             # =========================================
-            loss_rms = []
-            for j, wv in enumerate(WAVE_RGB):
-                # => Ray tracing
-                ray = rays_backup[j].clone()
-                ray, _, _ = self.trace(ray)
-                xy = ray.project_to(self.d_sensor)
-                xy_norm = (xy[:, :M//2, :M//2] - center_p[:M//2,:M//2,:]) * ray.ra.unsqueeze(-1)[:, :M//2, :M//2, :] # use 1/4 rays to speed up training
+            L_gear = []
+            # for g, depth in enumerate(GEAR_DIS):
+            if 1:
+                g = random.randint(0, 4)
+                depth = GEAR_DIS[g]
+                loss_rms = []
+                for w, wv in enumerate(WAVE_RGB):
+                    # => Ray tracing
+                    ray = rays_backup[g][w].clone()
+                    ray, _, _ = self.trace(ray, gear_idx=g)
+                    xy = ray.project_to(self.d_sensor)
+                    xy_norm = (xy[:, :M//2, :M//2] - center_p[g][:M//2,:M//2,:]) * ray.ra.unsqueeze(-1)[:, :M//2, :M//2, :] # use 1/4 rays to speed up training
 
-                # => Weight mask
-                weight_mask = (xy_norm.detach()**2).sum([0, -1])
-                weight_mask /= weight_mask.mean()
-                weight_mask[weight_mask < 0.5] *= 0.1
+                    # => Weight mask
+                    weight_mask = (xy_norm.detach()**2).sum([0, -1])
+                    weight_mask /= weight_mask.mean()
+                    weight_mask[weight_mask < 0.5] *= 0.1
 
-                # => Compute rms loss
-                l_rms = torch.sum((xy_norm**2).sum(-1) * weight_mask) / (torch.sum(ray.ra) + EPSILON)
-                loss_rms.append(l_rms)
+                    # => Compute rms loss
+                    l_rms = torch.sum((xy_norm**2).sum(-1) * weight_mask) / (torch.sum(ray.ra) + EPSILON)
+                    loss_rms.append(l_rms)
 
-            w_reg = 0.02
-            L_reg = self.loss_reg()
-            L_total = sum(loss_rms) + w_reg * L_reg
+                w_reg = 0.02
+                L_reg = self.loss_reg(depth)
+                L_g = sum(loss_rms) + w_reg * L_reg
+                L_gear.append(L_g)
+            L_total = sum(L_gear)
 
             # => Back-propagation
             optimizer.zero_grad()
-            L_total.backward()
+            # L_total.backward()
             optimizer.step()
             scheduler.step()
 
@@ -2477,8 +2501,7 @@ class Lensgroup():
                     ls = line.split()
                     surface_type, d, r = ls[0], float(ls[1]), float(ls[3])/2    # d: distance, r: radius
                     roc = float(ls[2])  # radius of curvature
-                    materials.append(Material(ls[4]))
-                    
+
                     d_total += d
                     ds.append(d)
 
@@ -2491,7 +2514,7 @@ class Lensgroup():
                             c = 1/roc if roc!=0 else 0
                         else:
                             c = roc
-
+                        materials.append(Material(ls[4]))
                         surfaces.append(Aspheric(r, d_total, c, device=self.device))
 
                     # Sensor
@@ -2499,21 +2522,17 @@ class Lensgroup():
                     elif surface_type == 'I': # Sensor
                         d_total -= d
                         ds.pop()
-                        materials.pop()
                         r_last = r
                         d_last = d
-
-                    # Mixed-type of X and B
-                    elif surface_type == 'M': 
-                        raise NotImplementedError()
 
                     # Object. Ignored.
                     elif surface_type == 'O': 
                         d_total = 0.
                         ds.pop()
-
+                        materials.append(Material(ls[4]))
                     # Spheric or aspheric surface
                     elif surface_type == 'S': 
+                        materials.append(Material(ls[4]))
                         if use_roc:
                             c = 1/roc if roc!=0 else 0
                         else:
@@ -2536,6 +2555,38 @@ class Lensgroup():
                                 else:
                                     ai.append(float(ls[ac]))
                             surfaces.append(Aspheric(r, d_total, c, conic, ai, device=self.device))
+                    elif surface_type == "M":
+                        gear_len = len(GEAR_DIS)
+                        d_src, r = float(ls[1]), float(ls[3 + gear_len]) / 2
+                        gear_table = []
+                        for gear_num in range(2, 2 + gear_len):
+                            gear_table.append(float(ls[gear_num]))
+
+                        roc = float(ls[2 + gear_len])  # radius of curvature
+                        materials.append(Material(ls[4 + gear_len]))
+                        d_total -= d
+                        d_total += d_src
+                        ds.append(d_src)
+
+                        if use_roc:
+                            c = 1 / roc if roc != 0 else 0
+                        else:
+                            c = roc
+
+                        if len(ls) <= 5 + gear_len:
+                            surfaces.append(AsphericMultiDis(r, d_total, c, device=self.device))
+                        elif len(ls) == 6 + gear_len:
+                            conic = float(ls[5 + gear_len])
+                            ai = None
+                            surfaces.append(AsphericMultiDis(r, d_total, c, conic, ai, device=self.device))
+                        else:
+                            ai = []
+                            for ac in range(5 + gear_len, len(ls)):
+                                if ac == 5 + gear_len:
+                                    conic = float(ls[5 + gear_len])
+                                else:
+                                    ai.append(float(ls[ac]))
+                            surfaces.append(AsphericMultiDis(r, d_total, c, conic, ai, device=self.device))
                     else:
                         raise Exception('surface type not implemented.')
 
@@ -2556,12 +2607,39 @@ class Lensgroup():
         f.writelines('O   0         0         0        AIR\n')
         for i in range(len(self.surfaces)):
             # Aspheric surface
-            if isinstance(self.surfaces[i], Aspheric):
+            if type(self.surfaces[i]) == Aspheric:
                 if i == 0:
                     str2 = f'S {self.surfaces[i].d.item():.4f} '
                 else:
                     str2 = f'S {self.surfaces[i].d.item() - self.surfaces[i-1].d.item():.3f} '
-                
+                str2 = str2 + f"{self.surfaces[i].c.item():.4f} "
+                str2 = str2 + f"{self.surfaces[i].r*2:.2f} "
+                str2 = str2 + f"{self.materials[i+1].name} "
+
+                if self.surfaces[i].k is not None:
+                    str2 = str2 + f"{self.surfaces[i].k.item():.2f} "
+
+                if self.surfaces[i].ai_degree > 0:
+                    if self.surfaces[i].ai_degree == 4:
+                        str2 = str2 + f'{self.surfaces[i].ai2.item():e} {self.surfaces[i].ai4.item():e} {self.surfaces[i].ai6.item():e} {self.surfaces[i].ai8.item():e}'
+                    elif self.surfaces[i].ai_degree == 5:
+                        str2 = str2 + f'{self.surfaces[i].ai2.item():e} {self.surfaces[i].ai4.item():e} {self.surfaces[i].ai6.item():e} {self.surfaces[i].ai8.item():e} {self.surfaces[i].ai10.item():e}'
+                    elif self.surfaces[i].ai_degree == 6:
+                        str2 = str2 + f'{self.surfaces[i].ai2.item():e} {self.surfaces[i].ai4.item():e} {self.surfaces[i].ai6.item():e} {self.surfaces[i].ai8.item():e} {self.surfaces[i].ai10.item():e} {self.surfaces[i].ai12.item():e}'
+                    else:
+                        for j in range(1, self.surfaces[i].ai_degree+1):
+                            a = eval(f'self.surfaces[i].ai{2*j}.item()')
+                            str2 = str2 + f"{a:e} "
+                f.writelines(str2 + "\n")
+            elif type(self.surfaces[i]) == AsphericMultiDis:
+                if i == 0:
+                    str2 = f"M {self.surfaces[i].d_src.item():.4f} "
+                else:
+                    str2 = f"M {self.surfaces[i].d_src.item() - self.surfaces[i-1].d.item():.3f} "
+
+                for j in self.surfaces[i].gear_table:
+                    str2 = str2 + f"{j.item():.4f} "
+
                 str2 = str2 + f'{self.surfaces[i].c.item():.4f} '
                 str2 = str2 + f'{self.surfaces[i].r*2:.2f} '
                 str2 = str2 + f'{self.materials[i+1].name} '
@@ -2824,7 +2902,7 @@ SURF 0
 # ====================================================================================
 # Other functions.
 # ====================================================================================
-def create_lens(rff=1.0, flange=1.0, d_aper=0.5, d_sensor=None, hfov=0.6, imgh=6, fnum=2.8, surfnum=4, dir='.'):
+def create_lens(rff=1.0, flange=1.0, d_aper=0.5, d_sensor=None, hfov=0.6, imgh=6, fnum=2.8, surfnum=4, dir='.', gear_sur=None):
     """ Create a flat starting point for cellphone lens design.
 
         Aperture is placed 0.2mm i front of the first surface.
@@ -2879,7 +2957,11 @@ def create_lens(rff=1.0, flange=1.0, d_aper=0.5, d_sensor=None, hfov=0.6, imgh=6
 
         mat = Material(name='air') if n==1 else Material(name=mat_name) 
         materials.append(mat)
-    
+        
+        if gear_sur == i:
+            assert n == 1
+            surfaces.pop()
+            surfaces.append(AsphericMultiDis(imgh / 2, d_total))
     # add sensor
     materials.append(Material(name='air'))
     lens = Lensgroup()

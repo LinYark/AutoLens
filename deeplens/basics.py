@@ -21,6 +21,10 @@ EPSILON = 1e-6  # replace 0 with EPSILON in some cases
 GEO_SPP = 512   # spp for geometric optics calculation
 NEWTON_STEP_BOUND = 1   # Maximum step length in one Newton iteration
 
+GEAR_SUR = 6
+GEAR_DIS = [-20000, -5000, -1000, -500, -200]
+
+
 MATERIAL_TABLE = { 
     # [nD, Abbe number]
     "vacuum":       [1.,       math.inf],
@@ -131,7 +135,6 @@ GLASS_NAME = {
     "okp4":         'OKP4',
     "okp4ht":       'OKP4HT'
 }
-
 
 
 # ----------------------------------------------------------------------------------------

@@ -867,3 +867,65 @@ class Aspheric(Surface):
                 surf_dict['ai'].append(eval(f'self.ai{2*i}.item()'))
 
         return surf_dict
+    
+
+class AsphericMultiDis(Aspheric):
+    def __init__(
+        self,
+        r,
+        d,
+        c=0.0,
+        k=0.0,
+        ai=None,
+        mat1=None,
+        mat2=None,
+        is_square=False,
+        device=torch.device("cuda:0"),
+        diff=False,
+        square=False,
+    ):
+        Aspheric.__init__(
+            self, r, d, c, k, ai, mat1, mat2, is_square, device, diff, square
+        )
+        self.gear_table = torch.ones(len(GEAR_DIS)).to(device) * 0.1
+        if torch.is_tensor(d):
+            self.d_src = d.to(device)
+        else:
+            self.d_src = torch.Tensor(np.asarray(float(d))).to(device)
+
+        self.d = self.d_src + torch.abs(self.gear_table[0])
+
+    def switch_gear(self, i):
+        assert i < len(self.gear_table)
+        self.d = self.d_src
+        for j, x in enumerate(self.gear_table):
+            if j > i:
+                break
+            self.d = self.d + torch.abs(self.gear_table[j])
+
+    def activate_grad(self, activate=True, term=None):
+        """Activate/deactivate greadients."""
+        self.c.requires_grad_(activate)
+        self.d_src.requires_grad_(activate)
+        self.gear_table.requires_grad_(activate)
+
+        if self.k != 0:
+            self.k.requires_grad_(activate)
+
+        if self.ai_degree > 0:
+            if self.ai_degree == 4:
+                self.ai2.requires_grad_(activate)
+                self.ai4.requires_grad_(activate)
+                self.ai6.requires_grad_(activate)
+                self.ai8.requires_grad_(activate)
+            elif self.ai_degree == 5:
+                self.ai2.requires_grad_(activate)
+                self.ai4.requires_grad_(activate)
+                self.ai6.requires_grad_(activate)
+                self.ai8.requires_grad_(activate)
+                self.ai10.requires_grad_(activate)
+            elif self.ai_degree == 6:
+                for i in range(1, self.ai_degree + 1):
+                    exec(f"self.ai{2*i}.requires_grad_({activate})")
+            else:
+                raise Exception("Wrong ai degree")

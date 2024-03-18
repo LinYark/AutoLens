@@ -58,7 +58,7 @@ def change_lens(lens, diag, fnum):
     return lens
 
 
-def curriculum_learning(lens, args):
+def curriculum_learning(lens: deeplens.Lensgroup, args):
     """ Curriculum learning for lens design.
     """
     lrs = [float(lr) for lr in args['lrs']]
@@ -87,7 +87,7 @@ def curriculum_learning(lens, args):
         lens.refine(lrs=lrs, decay=args['ai_lr_decay'], iterations=iterations, test_per_iter=50, importance_sampling=False, result_dir=result_dir)
 
     # ==> Refine lens at the last step
-    lens.refine(iterations=5000, test_per_iter=100, centroid=True, importance_sampling=True, result_dir=result_dir)
+    lens.refine(iterations=50000, test_per_iter=100, centroid=True, importance_sampling=True, result_dir=result_dir)
     logging.info('==> Training finish.')
 
     # ==> Final lens
@@ -99,9 +99,12 @@ if __name__=='__main__':
     result_dir = args['result_dir']
     device = args['device']
 
+    from deeplens.basics import GEAR_SUR
+    gear_sur = GEAR_SUR
+
     # =====> 1. Load or create lens
     if args['brute_force']:
-        create_lens(rff=float(args['rff']), flange=float(args['flange']), d_aper=args['d_aper'], hfov=args['HFOV'], imgh=args['DIAG'], fnum=args['FNUM'], surfnum=args['element'], dir=result_dir)
+        create_lens(rff=float(args['rff']), flange=float(args['flange']), d_aper=args['d_aper'], hfov=args['HFOV'], imgh=args['DIAG'], fnum=args['FNUM'], surfnum=args['element'], dir=result_dir, gear_sur=gear_sur)
         lens_name = f'./{result_dir}/starting_point_hfov{args["HFOV"]}_imgh{args["DIAG"]}_fnum{args["FNUM"]}.txt'
         lens = deeplens.Lensgroup(filename=lens_name)
         for i in lens.find_diff_surf():
