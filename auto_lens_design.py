@@ -1,5 +1,6 @@
 """ Aotumated lens design with curriculum learning, using RMS errors as loss function.
 """
+
 import os
 import string
 import argparse
@@ -119,6 +120,9 @@ if __name__ == "__main__":
     result_dir = args["result_dir"]
     device = args["device"]
 
+    from deeplens.basics import GEAR_SUR
+
+    gear_sur = GEAR_SUR
     # =====> 1. Load or create lens
     if args["brute_force"]:  # 暴力求解？
         create_lens(
@@ -130,6 +134,7 @@ if __name__ == "__main__":
             fnum=args["FNUM"],
             surfnum=args["element"],
             dir=result_dir,
+            gear_sur=gear_sur,
         )
         lens_name = f'./{result_dir}/starting_point_hfov{args["HFOV"]}_imgh{args["DIAG"]}_fnum{args["FNUM"]}.txt'
         lens = deeplens.Lensgroup(filename=lens_name)

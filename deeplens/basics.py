@@ -11,6 +11,9 @@ DEPTH = -20000
 EPSILON = 1e-6  # replace 0 with EPSILON in some cases
 GEO_SPP = 512  # spp for geometric optics calculation
 NEWTON_STEP_BOUND = 1  # Maximum step length in one Newton iteration
+GEAR_LEN = 5
+GEAR_DIS = [-20000, -5000, -1000, -500, -200]
+GEAR_SUR = 6
 
 MATERIAL_TABLE = {
     # [nD, Abbe number]
