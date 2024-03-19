@@ -76,7 +76,8 @@ def curriculum_learning(lens: deeplens.Lensgroup, args):
         diag1 = diag_start + (diag_target - diag_start) * np.sin(step / curriculum_steps * np.pi/2)
         fnum1 = fnum_start + (fnum_target - fnum_start) * np.sin(step / curriculum_steps * np.pi/2)
         lens = change_lens(lens, diag1, fnum1)
-
+        
+        lens.switch_gear()
         lens.analysis(save_name=f'{result_dir}/step{step}_starting_point', zmx_format=True)
         lens.write_lensfile(f'{result_dir}/step{step}_starting_point.txt', write_zmx=True)
         lens.write_lens_json(f'{result_dir}/step{step}_starting_point.json')

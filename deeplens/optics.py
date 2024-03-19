@@ -144,6 +144,10 @@ class Lensgroup():
         self.device = device
         return self
 
+    def switch_gear(self, gear_idx=0):
+        for i,x in enumerate(self.surfaces):
+            if type(self.surfaces[i]) == AsphericGear:
+                self.surfaces[i].switch_gear(gear_idx, self.gear_table)
 
     def load_file(self, filename, use_roc, post_computation, sensor_res):
         """ Load lens from .txt file.
@@ -155,11 +159,12 @@ class Lensgroup():
             sensor_res (list): sensor resolution.
         """
         if filename[-4:] == '.txt':
-            self.surfaces, self.materials, self.r_last, d_last = self.read_lensfile(filename, use_roc)
-            
+            self.surfaces, self.materials, self.r_last, d_last, self.gear_table = self.read_lensfile(filename, use_roc)
+           
             self.d_sensor = d_last + self.surfaces[-1].d.item()
             self.focz = self.d_sensor
 
+            self.switch_gear()
             self.find_aperture()
             self.prepare_sensor(sensor_res)
 
@@ -178,13 +183,14 @@ class Lensgroup():
             raise Exception('Unknown file type.')
         
 
-    def load_external(self, surfaces, materials, r_last, d_sensor):
+    def load_external(self, surfaces, materials, r_last, d_sensor, gear_table):
         """ Load lens from extrenal surface/material list.
         """
         self.surfaces = surfaces
         self.materials = materials
         self.r_last = r_last
         self.d_sensor = d_sensor
+        self.gear_table = gear_table
         
 
     def prepare_sensor(self, sensor_res=(512, 512)):
@@ -594,7 +600,7 @@ class Lensgroup():
     # Ray Tracing functions
     # ====================================================================================
 
-    def trace(self, ray, stop_ind=None, lens_range=None, ignore_aper=False, record=False, gear_idx=0):
+    def trace(self, ray, stop_ind=None, lens_range=None, ignore_aper=False, record=False):
         """ Ray tracing function. Ray in and ray out.
 
             Forward or backward ray tracing is automatically determined by ray directions.
@@ -620,9 +626,6 @@ class Lensgroup():
         
         if ignore_aper:
             lens_range = self.find_diff_surf()
-
-        if GEAR_SUR is not None:
-            self.surfaces[GEAR_SUR + 1].switch_gear(gear_idx)
 
         # Determine forward or backward
         with torch.no_grad():
@@ -1656,6 +1659,7 @@ class Lensgroup():
         """ Analyze the optical system by generating a set of parallel rays
             draw setup and spot diagram. 
         """
+        self.switch_gear()
         # ---------------------------------
         # draw light path
         # ---------------------------------
@@ -2069,7 +2073,22 @@ class Lensgroup():
 
         L = loss[0].detach() / loss[1].detach() * loss[0] + loss[1].detach() / loss[0].detach() * loss[1]
         return L
+    
+    def loss_center_infocus(self, M=16, depth=DEPTH):
+        """ Sample parallel rays and compute RMS loss on the sensor plane, minimize focus loss.
+        """
+        focz = self.d_sensor
+        o=[[0, 0, depth]]
+        loss = []
+        for wv in [WAVE_RGB[0], WAVE_RGB[2]]:
+            ray = self.sample_from_points(o=o, spp=M, wavelength=wv)
+            ray, _, _ = self.trace(ray)
+            p = ray.project_to(focz)
 
+            loss.append(torch.sum(p.abs() * ray.ra.unsqueeze(-1)) / torch.sum(ray.ra))   # L1 loss
+
+        L = loss[0].detach() / loss[1].detach() * loss[0] + loss[1].detach() / loss[0].detach() * loss[1]
+        return L
 
     def analysis_rms(self, depth=DEPTH, ref=True):
         """ Compute RMS-based error. Contain both RMS errors and RMS radius.
@@ -2117,8 +2136,8 @@ class Lensgroup():
             Can also revise this function to plot PSF.
         """
         # H, W = self.sensor_res
-        H = 11
-        spp = 32
+        H = 5
+        spp = 8
         # ==> PSF and RMS by patch
         scale = - depth * np.tan(self.hfov) / self.r_last
 
@@ -2202,7 +2221,9 @@ class Lensgroup():
     def loss_reg(self, depth=DEPTH, w1=0.2, w2=1, w3=1):
         """ An empirical regularization loss for lens design.
         """
-        loss_reg = w1 * self.loss_infocus() + self.loss_rms(depth) + w2 * self.loss_ray_angle(depth) + w3 * (self.loss_self_intersec() + self.loss_last_surf()) + self.loss_surface() #
+        # + w1 * self.loss_infocus()
+        # 
+        loss_reg =  w1* self.loss_center_infocus()  + self.loss_rms(depth) + w2 * self.loss_ray_angle(depth) + w3 * (self.loss_self_intersec() + self.loss_last_surf()) + self.loss_surface() #
         return loss_reg
     
 
@@ -2253,7 +2274,7 @@ class Lensgroup():
         for i in diff_surf_range:
             self.surfaces[i].activate_grad(activate)
 
-
+        self.gear_table.activate_grad(activate)
     # ---------------------------
     # 2. Optimizer-related functions
     # --------------------------- 
@@ -2288,11 +2309,10 @@ class Lensgroup():
         for i, s in enumerate(self.surfaces):
             if s.c != 0:
                 c_ls.append(i)
-                if type(s) == AsphericMultiDis:
+                if type(s) == AsphericGear:
                     gear_ls.append(i)
                 else:
                     d_ls.append(i)
-                d_ls.append(i)
             if s.k != 0:
                 k_ls.append(i)
             if s.ai_degree >= 4:
@@ -2313,9 +2333,9 @@ class Lensgroup():
         if c_ls and lrs[0] > 0:
             params.append({'params': [self.surfaces[surf].c for surf in c_ls], 'lr': lrs[0]})
         if d_ls and lrs[1] > 0:
-            params.append({'params': [self.surfaces[surf].d for surf in c_ls], 'lr': lrs[1]})
-            params.append({'params': [self.surfaces[surf].d_src for surf in gear_ls], 'lr': lrs[1]*3,})
-            params.append({'params': [self.surfaces[surf].gear_table for surf in gear_ls], 'lr': lrs[1]*3,})
+            params.append({'params': [self.surfaces[surf].d for surf in d_ls], 'lr': lrs[1]})
+            params.append({'params': [self.surfaces[surf].d_src for surf in gear_ls], 'lr': lrs[1]})
+            params.append({'params': [self.gear_table.table], 'lr': lrs[1]*3})
         if k_ls and lrs[2] > 0:
             params.append({'params': [self.surfaces[surf].k for surf in k_ls], 'lr': lrs[2]})
         if lrs[3] > 0:
@@ -2388,11 +2408,13 @@ class Lensgroup():
                 # => Use center spot of green rays
                 with torch.no_grad():
                     center_p = []
-                    for depth in GEAR_DIS:
+                    for g, depth in enumerate(GEAR_DIS):
+                        self.switch_gear(g)
+
                         mag = 1 / self.calc_scale_pinhole(depth)
                         ray = self.sample_point_source(M=M, R=self.sensor_size[0]/2/mag, depth=depth, spp=spp*4, pupil=True, wavelength=WAVE_RGB[1], importance_sampling=importance_sampling)
                         xy_center_ref = - ray.o[0, :, :, :2] * mag
-
+                        
                         ray, _, _ = self.trace(ray)
                         ray.propagate_to(self.d_sensor)
                         xy_center = (ray.o[...,:2]*ray.ra.unsqueeze(-1)).sum(0) / ray.ra.sum(0).add(EPSILON).unsqueeze(-1)
@@ -2406,7 +2428,8 @@ class Lensgroup():
             
                 # => Sample new rays for training
                 rays_backup = []
-                for depth in GEAR_DIS:
+                for g, depth in enumerate(GEAR_DIS):
+                    self.switch_gear(g)
                     rays_wv_backup = []
                     for wv in WAVE_RGB:
                         mag = 1 / self.calc_scale_pinhole(depth)
@@ -2423,11 +2446,12 @@ class Lensgroup():
             if 1:
                 g = random.randint(0, 4)
                 depth = GEAR_DIS[g]
+                self.switch_gear(g)
                 loss_rms = []
                 for w, wv in enumerate(WAVE_RGB):
                     # => Ray tracing
                     ray = rays_backup[g][w].clone()
-                    ray, _, _ = self.trace(ray, gear_idx=g)
+                    ray, _, _ = self.trace(ray)
                     xy = ray.project_to(self.d_sensor)
                     xy_norm = (xy[:, :M//2, :M//2] - center_p[g][:M//2,:M//2,:]) * ray.ra.unsqueeze(-1)[:, :M//2, :M//2, :] # use 1/4 rays to speed up training
 
@@ -2448,7 +2472,7 @@ class Lensgroup():
 
             # => Back-propagation
             optimizer.zero_grad()
-            # L_total.backward()
+            L_total.backward()
             optimizer.step()
             scheduler.step()
 
@@ -2501,6 +2525,7 @@ class Lensgroup():
                     ls = line.split()
                     surface_type, d, r = ls[0], float(ls[1]), float(ls[3])/2    # d: distance, r: radius
                     roc = float(ls[2])  # radius of curvature
+                    materials.append(Material(ls[4]))
 
                     d_total += d
                     ds.append(d)
@@ -2514,7 +2539,6 @@ class Lensgroup():
                             c = 1/roc if roc!=0 else 0
                         else:
                             c = roc
-                        materials.append(Material(ls[4]))
                         surfaces.append(Aspheric(r, d_total, c, device=self.device))
 
                     # Sensor
@@ -2525,14 +2549,17 @@ class Lensgroup():
                         r_last = r
                         d_last = d
 
+                    # Mixed-type of X and B
+                    elif surface_type == 'M': 
+                        raise NotImplementedError()
+
                     # Object. Ignored.
                     elif surface_type == 'O': 
                         d_total = 0.
                         ds.pop()
-                        materials.append(Material(ls[4]))
+
                     # Spheric or aspheric surface
                     elif surface_type == 'S': 
-                        materials.append(Material(ls[4]))
                         if use_roc:
                             c = 1/roc if roc!=0 else 0
                         else:
@@ -2555,43 +2582,40 @@ class Lensgroup():
                                 else:
                                     ai.append(float(ls[ac]))
                             surfaces.append(Aspheric(r, d_total, c, conic, ai, device=self.device))
-                    elif surface_type == "M":
-                        gear_len = len(GEAR_DIS)
-                        d_src, r = float(ls[1]), float(ls[3 + gear_len]) / 2
-                        gear_table = []
-                        for gear_num in range(2, 2 + gear_len):
-                            gear_table.append(float(ls[gear_num]))
-
-                        roc = float(ls[2 + gear_len])  # radius of curvature
-                        materials.append(Material(ls[4 + gear_len]))
-                        d_total -= d
-                        d_total += d_src
-                        ds.append(d_src)
-
+                    elif surface_type == 'G':
                         if use_roc:
                             c = 1 / roc if roc != 0 else 0
                         else:
                             c = roc
 
-                        if len(ls) <= 5 + gear_len:
-                            surfaces.append(AsphericMultiDis(r, d_total, c, device=self.device))
-                        elif len(ls) == 6 + gear_len:
-                            conic = float(ls[5 + gear_len])
+                        if len(ls) <= 5 :
+                            surfaces.append(AsphericGear(r, d_total, c, device=self.device))
+                        elif len(ls) == 6:
+                            conic = float(ls[5])
                             ai = None
-                            surfaces.append(AsphericMultiDis(r, d_total, c, conic, ai, device=self.device))
+                            surfaces.append(AsphericGear(r, d_total, c, conic, ai, device=self.device))
                         else:
                             ai = []
-                            for ac in range(5 + gear_len, len(ls)):
-                                if ac == 5 + gear_len:
-                                    conic = float(ls[5 + gear_len])
+                            for ac in range(5, len(ls)):
+                                if ac == 5:
+                                    conic = float(ls[5])
                                 else:
                                     ai.append(float(ls[ac]))
-                            surfaces.append(AsphericMultiDis(r, d_total, c, conic, ai, device=self.device))
+                            surfaces.append(AsphericGear(r, d_total, c, conic, ai, device=self.device))
+                    elif surface_type == 'T':
+                        materials.pop()
+                        ds.pop()
+
+                        gear_len = len(GEAR_DIS)
+                        table = []
+                        for gear_num in range(5, 5 + gear_len):
+                            table.append(float(ls[gear_num]))
+                        gear_table = GearTable(table=table)
                     else:
                         raise Exception('surface type not implemented.')
 
 
-        return surfaces, materials, r_last, d_last
+        return surfaces, materials, r_last, d_last, gear_table
 
 
     def write_lensfile(self, filename='./test.txt', str1='optimized lens file.\n', write_zmx=False):
@@ -2607,11 +2631,16 @@ class Lensgroup():
         f.writelines('O   0         0         0        AIR\n')
         for i in range(len(self.surfaces)):
             # Aspheric surface
-            if type(self.surfaces[i]) == Aspheric:
+            if isinstance(self.surfaces[i], Aspheric):
                 if i == 0:
                     str2 = f'S {self.surfaces[i].d.item():.4f} '
                 else:
-                    str2 = f'S {self.surfaces[i].d.item() - self.surfaces[i-1].d.item():.3f} '
+                    if i-1 < GEAR_SUR:
+                        str2 = f'S {self.surfaces[i].d.item() - self.surfaces[i-1].d.item():.3f} '
+                    elif i-1 == GEAR_SUR:
+                        str2 = f'G {self.surfaces[i].d_src.item() - self.surfaces[i-1].d.item():.3f} '
+                    else:
+                        str2 = f'G {self.surfaces[i].d_src.item() - self.surfaces[i-1].d_src.item():.3f} '
                 str2 = str2 + f"{self.surfaces[i].c.item():.4f} "
                 str2 = str2 + f"{self.surfaces[i].r*2:.2f} "
                 str2 = str2 + f"{self.materials[i+1].name} "
@@ -2631,40 +2660,15 @@ class Lensgroup():
                             a = eval(f'self.surfaces[i].ai{2*j}.item()')
                             str2 = str2 + f"{a:e} "
                 f.writelines(str2 + "\n")
-            elif type(self.surfaces[i]) == AsphericMultiDis:
-                if i == 0:
-                    str2 = f"M {self.surfaces[i].d_src.item():.4f} "
-                else:
-                    str2 = f"M {self.surfaces[i].d_src.item() - self.surfaces[i-1].d.item():.3f} "
-
-                for j in self.surfaces[i].gear_table:
-                    str2 = str2 + f"{j.item():.4f} "
-
-                str2 = str2 + f'{self.surfaces[i].c.item():.4f} '
-                str2 = str2 + f'{self.surfaces[i].r*2:.2f} '
-                str2 = str2 + f'{self.materials[i+1].name} '
-                
-                if self.surfaces[i].k is not None:
-                    str2 = str2 + f'{self.surfaces[i].k.item():.2f} '
-                
-                if self.surfaces[i].ai_degree > 0:
-                    if self.surfaces[i].ai_degree == 4:
-                        str2 = str2 + f'{self.surfaces[i].ai2.item():e} {self.surfaces[i].ai4.item():e} {self.surfaces[i].ai6.item():e} {self.surfaces[i].ai8.item():e}'
-                    elif self.surfaces[i].ai_degree == 5:
-                        str2 = str2 + f'{self.surfaces[i].ai2.item():e} {self.surfaces[i].ai4.item():e} {self.surfaces[i].ai6.item():e} {self.surfaces[i].ai8.item():e} {self.surfaces[i].ai10.item():e}'
-                    elif self.surfaces[i].ai_degree == 6:
-                        str2 = str2 + f'{self.surfaces[i].ai2.item():e} {self.surfaces[i].ai4.item():e} {self.surfaces[i].ai6.item():e} {self.surfaces[i].ai8.item():e} {self.surfaces[i].ai10.item():e} {self.surfaces[i].ai12.item():e}'
-                    else:
-                        for j in range(1, self.surfaces[i].ai_degree+1):
-                            a = eval(f'self.surfaces[i].ai{2*j}.item()')
-                            str2 = str2 + f"{a:e} "
-                f.writelines(str2+'\n')
             else:
                 raise Exception('Not implemented.')
         
-        f.writelines(f'I {self.d_sensor-self.surfaces[-1].d.item():.3f} {0.0} {self.r_last*2:.2f} {self.materials[-1].name}')
+        f.writelines(f'I {self.d_sensor-self.surfaces[-1].d.item():.3f} {0.0} {self.r_last*2:.2f} {self.materials[-1].name}\n')
+        str3 = f'T 0 0 0 air '
+        for j in self.gear_table.table:
+            str3 = str3 + f"{j.item():.4f} "
+        f.writelines(str3)
         f.close()
-
 
         if write_zmx:
             filename = filename[:-4] + '.zmx'
@@ -2946,8 +2950,10 @@ def create_lens(rff=1.0, flange=1.0, d_aper=0.5, d_sensor=None, hfov=0.6, imgh=6
     for i in range(2*surfnum):
         # surface
         d_total += d_ls[i]
-        surfaces.append(Aspheric(imgh/2, d_total)) 
-        
+        if i<gear_sur:
+            surfaces.append(Aspheric(imgh/2, d_total)) 
+        else:
+            surfaces.append(AsphericGear(imgh / 2, d_total))
         # material (last meterial)
         n = 1
         if i % 2 != 0:
@@ -2958,14 +2964,11 @@ def create_lens(rff=1.0, flange=1.0, d_aper=0.5, d_sensor=None, hfov=0.6, imgh=6
         mat = Material(name='air') if n==1 else Material(name=mat_name) 
         materials.append(mat)
         
-        if gear_sur == i:
-            assert n == 1
-            surfaces.pop()
-            surfaces.append(AsphericMultiDis(imgh / 2, d_total))
+    gear_table = GearTable(len_table=len(GEAR_DIS))
     # add sensor
     materials.append(Material(name='air'))
     lens = Lensgroup()
-    lens.load_external(surfaces, materials, imgh/2, d_sensor)
+    lens.load_external(surfaces, materials, imgh/2, d_sensor, gear_table)
 
     lens.write_lensfile(f'{dir}/starting_point_hfov{hfov}_imgh{imgh}_fnum{fnum}.txt')
     return lens

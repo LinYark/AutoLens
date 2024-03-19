@@ -869,45 +869,39 @@ class Aspheric(Surface):
         return surf_dict
     
 
-class AsphericMultiDis(Aspheric):
-    def __init__(
-        self,
-        r,
-        d,
-        c=0.0,
-        k=0.0,
-        ai=None,
-        mat1=None,
-        mat2=None,
-        is_square=False,
-        device=torch.device("cuda:0"),
-        diff=False,
-        square=False,
-    ):
-        Aspheric.__init__(
-            self, r, d, c, k, ai, mat1, mat2, is_square, device, diff, square
-        )
-        self.gear_table = torch.ones(len(GEAR_DIS)).to(device) * 0.1
+class GearTable():
+    def __init__(self, table=[], len_table=5, alpha=0.1, device=torch.device("cuda:0")):
+        if len(table) == 0:
+            self.table = (torch.ones(len_table)*alpha).to(device) 
+        else:
+            self.table = torch.Tensor(table).to(device)
+
+    def activate_grad(self, activate=True):
+        """Activate/deactivate greadients."""
+        self.table.requires_grad_(activate)
+
+class AsphericGear(Aspheric):
+    def __init__( self, r, d, c=0.0, k=0.0, ai=None, mat1=None, mat2=None, is_square=False, device=torch.device("cuda:0"), diff=False, square=False):
+        Aspheric.__init__(self, r, d, c, k, ai, mat1, mat2, is_square, device, diff, square)
         if torch.is_tensor(d):
             self.d_src = d.to(device)
         else:
             self.d_src = torch.Tensor(np.asarray(float(d))).to(device)
 
-        self.d = self.d_src + torch.abs(self.gear_table[0])
-
-    def switch_gear(self, i):
-        assert i < len(self.gear_table)
         self.d = self.d_src
-        for j, x in enumerate(self.gear_table):
+
+    def switch_gear(self, i, gear_table:GearTable):
+        assert i < len(gear_table.table)
+        self.d = self.d_src
+        for j, x in enumerate(gear_table.table):
             if j > i:
                 break
-            self.d = self.d + torch.abs(self.gear_table[j])
+            self.d = self.d + torch.abs(gear_table.table[j])
 
     def activate_grad(self, activate=True, term=None):
         """Activate/deactivate greadients."""
         self.c.requires_grad_(activate)
         self.d_src.requires_grad_(activate)
-        self.gear_table.requires_grad_(activate)
 
         if self.k != 0:
             self.k.requires_grad_(activate)
