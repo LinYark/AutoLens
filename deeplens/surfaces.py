@@ -870,9 +870,9 @@ class Aspheric(Surface):
     
 
 class GearTable():
-    def __init__(self, table=[], len_table=5, alpha=0.1, device=torch.device("cuda:0")):
+    def __init__(self, table=[], len_table=5, alpha=0.05, device=torch.device("cuda:0")):
         if len(table) == 0:
-            self.table = (torch.ones(len_table)*alpha).to(device) 
+            self.table = torch.zeros(len_table).to(device) 
         else:
             self.table = torch.Tensor(table).to(device)
 
@@ -892,11 +892,7 @@ class AsphericGear(Aspheric):
 
     def switch_gear(self, i, gear_table:GearTable):
         assert i < len(gear_table.table)
-        self.d = self.d_src
-        for j, x in enumerate(gear_table.table):
-            if j > i:
-                break
-            self.d = self.d + torch.abs(gear_table.table[j])
+        self.d = self.d_src + gear_table.table[i]
 
     def activate_grad(self, activate=True, term=None):
         """Activate/deactivate greadients."""

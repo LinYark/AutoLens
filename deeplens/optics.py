@@ -1663,7 +1663,10 @@ class Lensgroup():
         # ---------------------------------
         # draw light path
         # ---------------------------------
-        self.plot_setup2D_with_trace(filename=save_name, multi_plot=multi_plot, entrance_pupil=True, plot_invalid=plot_invalid, zmx_format=zmx_format, lens_title=lens_title, depth=point_depth)
+        gear_dis = GEAR_DIS
+        for g, depth in enumerate(gear_dis):
+            self.switch_gear(g)
+            self.plot_setup2D_with_trace(filename=save_name, multi_plot=multi_plot, entrance_pupil=True, plot_invalid=plot_invalid, zmx_format=zmx_format, lens_title=lens_title, depth=depth)
 
         # ---------------------------------
         # draw spot diagram
@@ -1710,7 +1713,7 @@ class Lensgroup():
                     ax, fig = self.plot_raytraces(oss, ax=ax, fig=fig, color=colors_list[i], plot_invalid=plot_invalid, ra=ray.ra)
                     ax.axis('off')
 
-            fig.savefig(f"{filename}.png", bbox_inches='tight', format='png', dpi=300)
+            fig.savefig(f"{filename}_{depth}.png", bbox_inches='tight', format='png', dpi=300)
             plt.close()
         
 
@@ -1733,7 +1736,7 @@ class Lensgroup():
 
             ax.axis('off')
             ax.set_title(lens_title)
-            fig.savefig(f"{filename}.png", bbox_inches='tight', format='png', dpi=600)
+            fig.savefig(f"{filename}_{depth}.png", bbox_inches='tight', format='png', dpi=600)
             plt.close()
 
     
@@ -2221,9 +2224,8 @@ class Lensgroup():
     def loss_reg(self, depth=DEPTH, w1=0.2, w2=1, w3=1):
         """ An empirical regularization loss for lens design.
         """
-        # + w1 * self.loss_infocus()
-        # 
-        loss_reg =  w1* self.loss_center_infocus()  + self.loss_rms(depth) + w2 * self.loss_ray_angle(depth) + w3 * (self.loss_self_intersec() + self.loss_last_surf()) + self.loss_surface() #
+        loss_reg = w1* (self.loss_center_infocus(depth=depth) + self.loss_rms(depth=depth)) + \
+                    w2 * (self.loss_ray_angle(depth=depth) +self.loss_self_intersec() + self.loss_last_surf() + self.loss_surface()) #
         return loss_reg
     
 
@@ -2335,7 +2337,7 @@ class Lensgroup():
         if d_ls and lrs[1] > 0:
             params.append({'params': [self.surfaces[surf].d for surf in d_ls], 'lr': lrs[1]})
             params.append({'params': [self.surfaces[surf].d_src for surf in gear_ls], 'lr': lrs[1]})
-            params.append({'params': [self.gear_table.table], 'lr': lrs[1]*3})
+            params.append({'params': [self.gear_table.table], 'lr': lrs[1]*10})
         if k_ls and lrs[2] > 0:
             params.append({'params': [self.surfaces[surf].k for surf in k_ls], 'lr': lrs[2]})
         if lrs[3] > 0:
@@ -2442,10 +2444,7 @@ class Lensgroup():
             # Optimize lens by minimizing rms errors
             # =========================================
             L_gear = []
-            # for g, depth in enumerate(GEAR_DIS):
-            if 1:
-                g = random.randint(0, 4)
-                depth = GEAR_DIS[g]
+            for g, depth in enumerate(GEAR_DIS):
                 self.switch_gear(g)
                 loss_rms = []
                 for w, wv in enumerate(WAVE_RGB):
@@ -2465,7 +2464,7 @@ class Lensgroup():
                     loss_rms.append(l_rms)
 
                 w_reg = 0.02
-                L_reg = self.loss_reg(depth)
+                L_reg = self.loss_reg(depth=depth)
                 L_g = sum(loss_rms) + w_reg * L_reg
                 L_gear.append(L_g)
             L_total = sum(L_gear)
