@@ -1658,28 +1658,29 @@ class Lensgroup():
         """ Analyze the optical system by generating a set of parallel rays
             draw setup and spot diagram. 
         """
-        self.switch_gear()
 
-        # ---------------------------------
-        # draw light path
-        # ---------------------------------
         gear_dis = GEAR_DIS
         for g, depth in enumerate(gear_dis):
             self.switch_gear(g)
+
+            # ---------------------------------
+            # draw light path
+            # ---------------------------------
             self.plot_setup2D_with_trace(filename=save_name, multi_plot=multi_plot, entrance_pupil=True, plot_invalid=plot_invalid, zmx_format=zmx_format, lens_title=lens_title, depth=depth)
+            
+            # ---------------------------------
+            # draw spot diagram
+            # ---------------------------------
+            if draw_spot_diagram:
+                self.draw_spot_diagram(save_name=save_name) 
+            
+            # ---------------------------------
+            # calculate RMS error
+            # ---------------------------------
+            rms_avg, rms_radius_on_axis, rms_radius_off_axis = self.analysis_rms(depth=depth)
+            print(f'D = {depth}. Avg RMS: {round(rms_avg.item()*1000,3)}um, On-axis RMS: {round(rms_radius_on_axis.item()*1000,3)}um, Off-axis RMS: {round(rms_radius_off_axis.item()*1000,3)}um')
+        
         self.switch_gear()
-
-        # ---------------------------------
-        # draw spot diagram
-        # ---------------------------------
-        if draw_spot_diagram:
-            self.draw_spot_diagram(save_name=save_name) 
-
-        # ---------------------------------
-        # calculate RMS error
-        # ---------------------------------
-        rms_avg, rms_radius_on_axis, rms_radius_off_axis = self.analysis_rms()
-        print(f'Avg RMS spot size (radius): {round(rms_avg.item()*1000,3)}um, On-axis RMS radius: {round(rms_radius_on_axis.item()*1000,3)}um, Off-axis RMS radius: {round(rms_radius_off_axis.item()*1000,3)}um')
 
         return rms_avg
 
@@ -2078,7 +2079,7 @@ class Lensgroup():
         L = loss[0].detach() / loss[1].detach() * loss[0] + loss[1].detach() / loss[0].detach() * loss[1]
         return L
     
-    def loss_center_infocus(self, M=16, depth=DEPTH):
+    def loss_center_infocus(self, M=32, depth=DEPTH):
         """ Sample parallel rays and compute RMS loss on the sensor plane, minimize focus loss.
         """
         focz = self.d_sensor
@@ -2225,7 +2226,8 @@ class Lensgroup():
     def loss_reg(self, depth=DEPTH, w1=0.2, w2=1, w3=1):
         """ An empirical regularization loss for lens design.
         """
-        loss_reg = w1* (self.loss_center_infocus(depth=depth) + self.loss_rms(depth=depth)) + \
+        # + self.loss_rms(depth=depth)
+        loss_reg = w1* (self.loss_center_infocus(depth=depth) ) + \
                     w2 * (self.loss_ray_angle(depth=depth) +self.loss_self_intersec() + self.loss_last_surf() + self.loss_surface()) #
         return loss_reg
     
@@ -2664,7 +2666,7 @@ class Lensgroup():
             else:
                 raise Exception('Not implemented.')
         
-        f.writelines(f'I {self.d_sensor-self.surfaces[-1].d.item():.3f} {0.0} {self.r_last*2:.2f} {self.materials[-1].name}\n')
+        f.writelines(f'I {self.d_sensor-self.surfaces[-1].d_src.item():.3f} {0.0} {self.r_last*2:.2f} {self.materials[-1].name}\n')
         str3 = f'T 0 0 0 air '
         for j in self.gear_table.table:
             str3 = str3 + f"{j.item():.4f} "

@@ -76,7 +76,7 @@ def curriculum_learning(lens: deeplens.Lensgroup, args):
         diag1 = diag_start + (diag_target - diag_start) * np.sin(step / curriculum_steps * np.pi/2)
         fnum1 = fnum_start + (fnum_target - fnum_start) * np.sin(step / curriculum_steps * np.pi/2)
         lens = change_lens(lens, diag1, fnum1)
-        
+
         lens.switch_gear()
         lens.analysis(save_name=f'{result_dir}/step{step}_starting_point', zmx_format=True)
         lens.write_lensfile(f'{result_dir}/step{step}_starting_point.txt', write_zmx=True)
@@ -87,13 +87,22 @@ def curriculum_learning(lens: deeplens.Lensgroup, args):
         iterations = 1000
         lens.refine(lrs=lrs, decay=args['ai_lr_decay'], iterations=iterations, test_per_iter=50, importance_sampling=False, result_dir=result_dir)
 
+        lens.switch_gear()
+        lens.analysis(save_name=f'{result_dir}/step{step}_end_point', zmx_format=True)
+        lens.write_lensfile(f'{result_dir}/step{step}_end_point.txt', write_zmx=True)
+        lens.write_lens_json(f'{result_dir}/step{step}_end_point.json')
+
     # ==> Refine lens at the last step
-    lens.refine(iterations=50000, test_per_iter=100, centroid=True, importance_sampling=True, result_dir=result_dir)
+    lens.refine(iterations=20000, test_per_iter=100, centroid=True, importance_sampling=True, result_dir=result_dir)
     logging.info('==> Training finish.')
 
     # ==> Final lens
     lens = change_lens(lens, args['DIAG'], args['FNUM'])
 
+    lens.switch_gear()
+    lens.analysis(save_name=f'{result_dir}/end_point', zmx_format=True)
+    lens.write_lensfile(f'{result_dir}/end_point.txt', write_zmx=True)
+    lens.write_lens_json(f'{result_dir}/end_point.json')
 
 if __name__=='__main__':
     args = config()
@@ -117,7 +126,7 @@ if __name__=='__main__':
         lens = deeplens.Lensgroup(filename=args['filename'])
         lens.correct_shape()
     lens.switch_gear()
-    
+
     lens.set_target_fov_fnum(hfov=args['HFOV'], fnum=args['FNUM'], imgh=args['DIAG'])
     logging.info(f'==> Design target: FOV {round(args["HFOV"]*2*57.3, 2)}, DIAG {args["DIAG"]}mm, F/{args["FNUM"]}, FOCLEN {round(args["DIAG"]/2/np.tan(args["HFOV"]), 2)}mm.')
     lens.analysis(save_name=f'{result_dir}/lens_starting_point')
