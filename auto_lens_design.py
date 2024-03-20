@@ -116,6 +116,7 @@ if __name__=='__main__':
     else:
         lens = deeplens.Lensgroup(filename=args['filename'])
         lens.correct_shape()
+    lens.switch_gear()
     
     lens.set_target_fov_fnum(hfov=args['HFOV'], fnum=args['FNUM'], imgh=args['DIAG'])
     logging.info(f'==> Design target: FOV {round(args["HFOV"]*2*57.3, 2)}, DIAG {args["DIAG"]}mm, F/{args["FNUM"]}, FOCLEN {round(args["DIAG"]/2/np.tan(args["HFOV"]), 2)}mm.')

@@ -160,11 +160,10 @@ class Lensgroup():
         """
         if filename[-4:] == '.txt':
             self.surfaces, self.materials, self.r_last, d_last, self.gear_table = self.read_lensfile(filename, use_roc)
-           
             self.d_sensor = d_last + self.surfaces[-1].d.item()
             self.focz = self.d_sensor
-
             self.switch_gear()
+
             self.find_aperture()
             self.prepare_sensor(sensor_res)
 
@@ -1660,6 +1659,7 @@ class Lensgroup():
             draw setup and spot diagram. 
         """
         self.switch_gear()
+
         # ---------------------------------
         # draw light path
         # ---------------------------------
@@ -1667,6 +1667,7 @@ class Lensgroup():
         for g, depth in enumerate(gear_dis):
             self.switch_gear(g)
             self.plot_setup2D_with_trace(filename=save_name, multi_plot=multi_plot, entrance_pupil=True, plot_invalid=plot_invalid, zmx_format=zmx_format, lens_title=lens_title, depth=depth)
+        self.switch_gear()
 
         # ---------------------------------
         # draw spot diagram
@@ -2387,7 +2388,8 @@ class Lensgroup():
         # Training
         pbar = tqdm(total=iterations+1, desc='Progress', postfix={'rms': 0})
         for i in range(iterations+1):
-            
+            self.switch_gear()
+
             # =========================================
             # Evaluate the lens
             # =========================================
@@ -2481,7 +2483,7 @@ class Lensgroup():
         # Finish training
         pbar.close()
         self.activate_surf(activate=False, diff_surf_range=diff_surf_range)
-
+        self.switch_gear()
 
     # ====================================================================================
     # Lesn file IO
