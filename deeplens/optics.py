@@ -2402,7 +2402,7 @@ class Lensgroup():
                         if shape_control:
                             self.correct_shape(d_aper=0.1)
 
-                    self.write_lensfile(f'{result_dir}/iter{i}.txt', write_zmx=False)
+                    self.write_lensfile(f'{result_dir}/iter{i}.txt', write_zmx=True)
                     self.write_lens_json(f'{result_dir}/iter{i}.json')
                     self.analysis(f'{result_dir}/iter{i}', zmx_format=True, plot_invalid=True, multi_plot=False)
 

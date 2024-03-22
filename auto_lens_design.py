@@ -84,8 +84,8 @@ def curriculum_learning(lens: deeplens.Lensgroup, args):
         logging.info(f'==> Curriculum learning step {step}, target: FOV {round(lens.hfov * 2 * 57.3, 2)}, DIAG {round(2 * lens.r_last, 2)}mm, F/{lens.fnum}.')
         
         # ==> Lens design using RMS errors
-        iterations = 1000
-        lens.refine(lrs=lrs, decay=args['ai_lr_decay'], iterations=iterations, test_per_iter=50, importance_sampling=False, result_dir=result_dir)
+        iterations = 2000
+        lens.refine(lrs=lrs, decay=args['ai_lr_decay'], iterations=iterations, test_per_iter=200, importance_sampling=False, result_dir=result_dir)
 
         lens.switch_gear()
         lens.analysis(save_name=f'{result_dir}/step{step}_end_point', zmx_format=True)
@@ -93,7 +93,7 @@ def curriculum_learning(lens: deeplens.Lensgroup, args):
         lens.write_lens_json(f'{result_dir}/step{step}_end_point.json')
 
     # ==> Refine lens at the last step
-    lens.refine(iterations=20000, test_per_iter=100, centroid=True, importance_sampling=True, result_dir=result_dir)
+    lens.refine(iterations=100000, test_per_iter=1000, centroid=True, importance_sampling=True, result_dir=result_dir)
     logging.info('==> Training finish.')
 
     # ==> Final lens

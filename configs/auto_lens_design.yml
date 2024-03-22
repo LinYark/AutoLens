@@ -23,6 +23,6 @@ ai_lr_decay: 0.1
 
 # Random initialization
 ai_degree: 6
-flange: 1.2
-rff: 0.9
+flange: 1.5
+rff: 1.2
 d_aper: 0.2
