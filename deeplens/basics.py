@@ -22,7 +22,7 @@ GEO_SPP = 512   # spp for geometric optics calculation
 NEWTON_STEP_BOUND = 1   # Maximum step length in one Newton iteration
 
 GEAR_SUR = 6
-GEAR_DIS = [-20000, -1000, -500, -250, -150]
+GEAR_DIS = [-20000, -1000, -700, -500, -300]
 
 
 MATERIAL_TABLE = { 
