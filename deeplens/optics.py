@@ -1631,7 +1631,8 @@ class Lensgroup():
             delta_aper = self.surfaces[1].d.item() - d_aper
             for i in diff_surf_range:
                 self.surfaces[i].d -= delta_aper
-
+                if type(self.surfaces[i]) == AsphericGear:
+                    self.surfaces[i].d_src -= delta_aper
         
         # ==> Rule 3: If two surfaces overlap (at center), seperate them by a small distance
         for i in diff_surf_range:

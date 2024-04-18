@@ -93,7 +93,7 @@ def curriculum_learning(lens: deeplens.Lensgroup, args):
         lens.write_lens_json(f'{result_dir}/step{step}_end_point.json')
 
     # ==> Refine lens at the last step
-    lens.refine(iterations=50000, test_per_iter=1000, centroid=True, importance_sampling=True, result_dir=result_dir)
+    lens.refine(iterations=30000, test_per_iter=200, centroid=True, importance_sampling=True, result_dir=result_dir)
     logging.info('==> Training finish.')
 
     # ==> Final lens
@@ -113,7 +113,7 @@ if __name__=='__main__':
     gear_sur = GEAR_SUR
 
     # =====> 1. Load or create lens
-    if args['brute_force']:
+    if args['brute_force'] and False:
         create_lens(rff=float(args['rff']), flange=float(args['flange']), d_aper=args['d_aper'], hfov=args['HFOV'], imgh=args['DIAG'], fnum=args['FNUM'], surfnum=args['element'], dir=result_dir, gear_sur=gear_sur)
         lens_name = f'./{result_dir}/starting_point_hfov{args["HFOV"]}_imgh{args["DIAG"]}_fnum{args["FNUM"]}.txt'
         lens = deeplens.Lensgroup(filename=lens_name)
@@ -123,8 +123,9 @@ if __name__=='__main__':
             lens.surfaces[i].init_k()
             lens.surfaces[i].init_d()
     else:
+        args['filename']='./results/iter15000.txt'
         lens = deeplens.Lensgroup(filename=args['filename'])
-        lens.correct_shape()
+        lens.correct_shape(0.1)
     lens.switch_gear()
 
     lens.set_target_fov_fnum(hfov=args['HFOV'], fnum=args['FNUM'], imgh=args['DIAG'])

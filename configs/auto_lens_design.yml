@@ -25,7 +25,7 @@ ai_lr_decay: 0.1
 ai_degree: 6
 flange: 1.2
 rff: 0.9
-d_aper: 0.2
+d_aper: 0.1
 
 # 去仿真小米等效75mm，视角30°的镜头，勇的imx858，f/1.8
 # 可以仿照徕卡真实75mm的镜头https://www.leica-camera.cn/Photography/Leica-SL/SL-Lenses/Prime-Lenses/Apo-Summicron-SL_75_f/2_ASPH.html
