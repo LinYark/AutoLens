@@ -93,7 +93,7 @@ def curriculum_learning(lens: deeplens.Lensgroup, args):
         lens.write_lens_json(f'{result_dir}/step{step}_end_point.json')
 
     # ==> Refine lens at the last step
-    lens.refine(iterations=100000, test_per_iter=1000, centroid=True, importance_sampling=True, result_dir=result_dir)
+    lens.refine(iterations=50000, test_per_iter=1000, centroid=True, importance_sampling=True, result_dir=result_dir)
     logging.info('==> Training finish.')
 
     # ==> Final lens

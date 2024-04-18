@@ -2090,9 +2090,9 @@ class Lensgroup():
             ray, _, _ = self.trace(ray)
             p = ray.project_to(focz)
 
-            loss.append(torch.sum(p.abs() * ray.ra.unsqueeze(-1)) / torch.sum(ray.ra))   # L1 loss
+            loss.append(torch.sum(p.abs() * ray.ra.unsqueeze(-1)) / (torch.sum(ray.ra)+1e-9))   # L1 loss
 
-        L = loss[0].detach() / loss[1].detach() * loss[0] + loss[1].detach() / loss[0].detach() * loss[1]
+        L = loss[0].detach() / (loss[1].detach()+1e-9) * loss[0] + loss[1].detach() / (loss[0].detach()+1e-9) * loss[1]
         return L
 
     def analysis_rms(self, depth=DEPTH, ref=True):
@@ -2227,8 +2227,17 @@ class Lensgroup():
         """ An empirical regularization loss for lens design.
         """
         # + self.loss_rms(depth=depth)
+        # a = w1* (self.loss_center_infocus(depth=depth) )
+        # b = self.loss_ray_angle(depth=depth)
+        # c = self.loss_self_intersec()
+        # d = self.loss_last_surf() 
+        # e = self.loss_surface()
+
+        # loss_reg = a+ w2*(b+c+d+e)
+
         loss_reg = w1* (self.loss_center_infocus(depth=depth) ) + \
                     w2 * (self.loss_ray_angle(depth=depth) +self.loss_self_intersec() + self.loss_last_surf() + self.loss_surface()) #
+        # loss_reg = w2 * (self.loss_ray_angle(depth=depth) +self.loss_self_intersec() + self.loss_last_surf() + self.loss_surface())
         return loss_reg
     
 
@@ -2467,11 +2476,11 @@ class Lensgroup():
                     l_rms = torch.sum((xy_norm**2).sum(-1) * weight_mask) / (torch.sum(ray.ra) + EPSILON)
                     loss_rms.append(l_rms)
 
-                w_reg = 0.02
+                w_reg = 0.05
                 L_reg = self.loss_reg(depth=depth)
                 L_g = sum(loss_rms) + w_reg * L_reg
                 L_gear.append(L_g)
-            L_total = sum(L_gear)
+            L_total = sum(L_gear)/len(GEAR_DIS)
 
             # => Back-propagation
             optimizer.zero_grad()
@@ -2930,8 +2939,8 @@ def create_lens(rff=1.0, flange=1.0, d_aper=0.5, d_sensor=None, hfov=0.6, imgh=6
 
     d_opt = d_sensor - flange - d_aper
     partition = np.clip(np.random.randn(2*surfnum-1) + 1, 1, 2) # consider aperture, position normalization
-    partition = [p if i%2==0 else (0.6+0.05*i)*p for i,p in enumerate(partition)]    # distance between lenses should be small
-    partition[-2] *= 1.2  # the last lens should be far from the last second one
+    # partition = [p if i%2==0 else (0.6+0.05*i)*p for i,p in enumerate(partition)]    # distance between lenses should be small
+    partition[GEAR_SUR-1] *= 2  # the last lens should be far from the last second one
     partition = partition/np.sum(partition)
     d_ls = partition * d_opt
     d_ls = np.insert(d_ls, 0, 0)

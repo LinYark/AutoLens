@@ -1,13 +1,13 @@
 # => experiment options
 DEBUG: True
 brute_force: True
-EXP_NAME: '6P, 80deg, F/2.0, 7.66mm sensor, lens design'
+EXP_NAME: '6P, 75deg28mm, F/2.0, 7.66mm sensor, lens design'
 seed: 1
 
 # Modify the following parameters if you want to design you own lens
 # ==================
 # Design spec
-HFOV: 0.7 # half diagonal FoV in radian
+HFOV: 0.655 #46 50mm # half diagonal FoV in radian，cannot be too small
 FNUM: 2.0 # F-number
 DIAG: 7.66  # sensor diagonal length in mm
 element: 6  # lens element number
@@ -26,3 +26,6 @@ ai_degree: 6
 flange: 1.2
 rff: 0.9
 d_aper: 0.2
+
+# 去仿真小米等效75mm，视角30°的镜头，勇的imx858，f/1.8
+# 可以仿照徕卡真实75mm的镜头https://www.leica-camera.cn/Photography/Leica-SL/SL-Lenses/Prime-Lenses/Apo-Summicron-SL_75_f/2_ASPH.html
